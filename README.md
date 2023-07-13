@@ -1,4 +1,4 @@
-# Пустой проект для stm32f407vg discovery
+# stm32f4 I2C пример
 
 # Залитие на stm32f407vg discovery
 
