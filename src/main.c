@@ -39,52 +39,66 @@ void I2C1_init(void){
 }
 
 void I2C1_write_bytes(uint8_t addr, uint8_t *data, uint8_t len) {
-	//CHECK THAT LINE IS NOT BUSY
-	while(I2C1->SR2 & I2C_SR2_BUSY){}
-	//GENERATE START CONDITION
+	// 0. Ждем не занят ли шина I2C
+	while (I2C1->SR2 & I2C_SR2_BUSY);
+	
+    // 1. Запускаем передачу
 	I2C1->CR1 |= I2C_CR1_START;
-	//WAIT UNTIL START BIT IS SENT
-	while(!(I2C1->SR1 & I2C_SR1_SB)){};
-	//SEND ADDRESS
+	
+    // 2. Ждем пока будет отправлен начальный бит
+	while (!(I2C1->SR1 & I2C_SR1_SB));
+	
+    // 3. Отправляем в канал адрес, для того чтобы происходила запись данных \
+    //    его надо сместить в лево на 1 бит и оставить ноль первым битом
 	I2C1->DR = (addr << 1);
-	//WAIT UNTIL ADDRESS IS SENT
-	while(!(I2C1->SR1 & I2C_SR1_ADDR)){}
-	//READ SR1 AND SR2 TO CLEAR THE BIT
+
+	// 4. Ждем пока предет подверждение получения адреса
+	while (!(I2C1->SR1 & I2C_SR1_ADDR));
+
+	// 5. Считываем SR1 и SR2 для того чтобы сбросить их
 	(void) I2C1->SR2;
-	//ADDRESS TO WRITE TO
-	for(int i = 0; i < len; i++, *data++){
-		//DATA TO WRITE IN ADDRESS
+
+	// 6. Начинаем запись массива
+	for (int i = 0; i < len; i++, *data++){
 		I2C1->DR = *data;
-		//WAIT FOR TRANSFER TO COMPLETE
-		while(!(I2C1->SR1 & I2C_SR1_BTF)){}
+		
+        // 6.1. Ждем потверждения передачи
+		while (!(I2C1->SR1 & I2C_SR1_BTF));
 	}
 
-	//SET STOP BIT
+	// 7. Выключаем передачу устанавливая стоповый бит
 	I2C1->CR1 |= I2C_CR1_STOP;
 }
 
-void I2C_write_byte(uint8_t address, uint8_t mem, uint8_t data) {
-	//CHECK THAT LINE IS NOT BUSY
-	while(I2C1->SR2 & I2C_SR2_BUSY){}
-	//GENERATE START CONDITION
+void I2C_write_byte(uint8_t address, uint8_t code, uint8_t data) {
+    // 0. Ждем не занят ли шина I2C
+	while (I2C1->SR2 & I2C_SR2_BUSY);
+
+    // 1. Запускаем передачу
 	I2C1->CR1 |= I2C_CR1_START;
-	//WAIT UNTIL START BIT IS SENT
-	while(!(I2C1->SR1 & I2C_SR1_SB)){};
-	//SEND ADDRESS
-	I2C1->DR = address;
-	//WAIT UNTIL ADDRESS IS SENT
-	while(!(I2C1->SR1 & I2C_SR1_ADDR)){}
-	//READ SR1 AND SR2 TO CLEAR THE BIT
+    
+    // 2. Ждем пока будет отправлен начальный бит
+	while (!(I2C1->SR1 & I2C_SR1_SB));
+
+    // 3. Отправляем в канал адрес, для того чтобы происходила запись данных \
+    //    его надо сместить в лево на 1 бит и оставить ноль первым битом
+	I2C1->DR = (address << 1);
+
+	// 4. Ждем пока предет подверждение получения адреса	
+    while (!(I2C1->SR1 & I2C_SR1_ADDR));
+
+	// 5. Считываем SR1 и SR2 для того чтобы сбросить их
 	(void)I2C1->SR2;
-	//ADDRESS TO WRITE TO
-	I2C1->DR = mem;
-	//WAIT FOR TRANSFER TO COMPLETE
-	while(!(I2C1->SR1 & I2C_SR1_TXE)){}
-	//DATA TO WRITE IN ADDRESS
+
+	// 4. Передаем код
+	I2C1->DR = code;
+	while (!(I2C1->SR1 & I2C_SR1_TXE));
+
+	// 7. Передаем данные
 	I2C1->DR = data;
-	//WAIT FOR TRANSFER TO COMPLETE
-	while(!(I2C1->SR1 & I2C_SR1_TXE)){}
-	//SET STOP BIT
+	while (!(I2C1->SR1 & I2C_SR1_TXE));
+
+	// 8. Останавливаем передачу
 	I2C1->CR1 |= I2C_CR1_STOP;
 }
 
