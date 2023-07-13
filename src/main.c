@@ -1,6 +1,6 @@
 #include "../system/include/cmsis/stm32f4xx.h"
 
-void I2C1_init(void){
+void I2C1_init() {
     //// Настройка GPIO
     // PB6 -> SCL, BP7 ->SDA
     // 0. Включаем тактирование
@@ -88,7 +88,7 @@ void I2C_write_code(uint8_t address, uint8_t code, uint8_t data) {
     while (!(I2C1->SR1 & I2C_SR1_ADDR));
 
 	// 5. Считываем SR1 и SR2 для того чтобы сбросить их
-	(void)I2C1->SR2;
+	(void) I2C1->SR2;
 
 	// 4. Передаем код
 	I2C1->DR = code;
@@ -120,7 +120,7 @@ void I2C_write_byte(uint8_t address, uint8_t data) {
     while (!(I2C1->SR1 & I2C_SR1_ADDR));
 
 	// 5. Считываем SR1 и SR2 для того чтобы сбросить их
-	(void)I2C1->SR2;
+	(void) I2C1->SR2;
 
 	// 4. Передаем код
 	I2C1->DR = data;
@@ -130,125 +130,67 @@ void I2C_write_byte(uint8_t address, uint8_t data) {
 	I2C1->CR1 |= I2C_CR1_STOP;
 }
 
-
-
-void I2C1_read_bytes(uint8_t addr, uint8_t *data, uint8_t len) {
-	while(I2C1->SR2 & I2C_SR2_BUSY);          //Wait if bus busy
-	I2C1->CR1 |= I2C_CR1_START;               //Start genera
-	while(!(I2C1->SR1 & I2C_SR1_SB));         //Wait start condition generated
-	I2C1->CR1 |= I2C_CR1_ACK;                 //Enable acknowledge
-	I2C1->DR = addr;               //Write slave address
-	while(!(I2C1->SR1 & I2C_SR1_ADDR))        //Wait send addsess
-    {
-		if(I2C1->SR1 & I2C_SR1_AF)          //Acknowledge failure
-        {
-            I2C1->CR1 |= I2C_CR1_STOP;       //Stop generation
-            return;
-        }
+void I2C1_read_bytes(uint8_t address, uint8_t *data, uint8_t size) {
+    while (I2C1->SR2 & I2C_SR2_BUSY);
+    
+    I2C1->CR1 |= I2C_CR1_START;
+    while (!(I2C1->SR1 & I2C_SR1_SB));
+    
+    // Повторяющиеся шаги я расписывать не буду
+    // 1. Включаем подтверждение возвращается после получения байта
+    I2C1->CR1 |= I2C_CR1_ACK;
+    
+    // 2. Отправляем в канал адрес, для того чтобы происходила чтение данных \
+    //    его надо сместить в лево на 1 бит и установим 1 первым битом
+    I2C1->DR = ((address << 1) | 0x01);
+    while (!(I2C1->SR1 & I2C_SR1_ADDR))
+    (void) I2C1->SR2;
+    
+    // 3. Считывание массива данных
+    while (size--) {
+        // 3.1. Ждем, что регистр данных не пуст
+        while (!(I2C1->SR1 & I2C_SR1_RXNE));
+        *data++ = I2C1->DR;
     }
-	(void)I2C1->SR2;                          //Read SR2
-	DMA1_Stream5->M0AR = (uint32_t)data;        //Set address buf
-	DMA1_Stream5->NDTR = len;                 //Set len
-	DMA1_Stream5->CR |= DMA_SxCR_EN;            //Enable DMA
-	while(!(DMA1->HISR & DMA_HISR_TCIF5));    //Wait recive all data
-	DMA1->HIFCR |= DMA_HIFCR_CTCIF5;          //Clear DMA event
-	I2C1->CR1 |= I2C_CR1_STOP;                //Stop generation
-	I2C1->CR1 &=~ I2C_CR1_ACK;                //Disable acknowledge
+
+    I2C1->CR1 |= I2C_CR1_STOP;
+
+    // 4. Выключаем подтверждение возвращается после получения байта 
+    I2C1->CR1 &=~ I2C_CR1_ACK;
 }
 
-#define I2C_MODE_WRITE    0
-#define I2C_MODE_READ    1
-#define ADR 0x68
-#define I2C_ADDRESS(x, y)        ((y) ? (((x) << 1) | 0x01) : (((x) << 1) & 0xFE))
+/** @breif I2C_read_byte - при работе с некоторой перефирией продуман сценарий \
+ *                         получения 1 байта передачей команды
+ * */
+uint8_t I2C_read_byte(uint8_t address, uint8_t code) {
+    while (I2C1->SR2 & I2C_SR2_BUSY);
 
-uint8_t I2C_read_byte(uint8_t reg_addr)
-{
-	uint8_t data;
-	//стартуем
+	uint8_t data; // Возращаемые данные 
+	//// В начале передадим код регистра, который надо считать, а после считаем регистр
+    // 0. Передача кода
+    I2C_write_byte(address, code);
+	
+    // 1. Чтение данных 
 	I2C1->CR1 |= I2C_CR1_START;
-	while(!(I2C1->SR1 & I2C_SR1_SB)){};
-	(void) I2C1->SR1;
+	while (!(I2C1->SR1 & I2C_SR1_SB));
 
-	//передаем адрес устройства
-	I2C1->DR = (ADR << 1);//I2C_ADDRESS(ADR,I2C_MODE_WRITE);
-	while(!(I2C1->SR1 & I2C_SR1_ADDR)){};
-	(void) I2C1->SR1;
+    I2C1->CR1 |= I2C_CR1_ACK;
+
+	I2C1->DR = ((address << 1) | 0x1);
+	while (!(I2C1->SR1 & I2C_SR1_ADDR));
 	(void) I2C1->SR2;
 
-	//передаем адрес регистра
-	I2C1->DR = reg_addr;
-	while(!(I2C1->SR1 & I2C_SR1_TXE)){};
-	I2C1->CR1 |= I2C_CR1_STOP;
-
-	//рестарт!!!
-	I2C1->CR1 |= I2C_CR1_START;
-	while(!(I2C1->SR1 & I2C_SR1_SB)){};
-	(void) I2C1->SR1;
-
-	//передаем адрес устройства, но теперь для чтения
-	I2C1->DR = ((ADR << 1) | 0x1);  // I2C_ADDRESS(ADR,I2C_MODE_READ);
-	while(!(I2C1->SR1 & I2C_SR1_ADDR)){};
-	(void) I2C1->SR1;
-	(void) I2C1->SR2;
-
-	//читаем
-	I2C1->CR1 &= ~I2C_CR1_ACK;
-	while(!(I2C1->SR1 & I2C_SR1_RXNE)){};
+	while (!(I2C1->SR1 & I2C_SR1_RXNE));
 	data = I2C1->DR;
-	I2C1->CR1 |= I2C_CR1_STOP;
 
+	I2C1->CR1 |= I2C_CR1_STOP;
+    I2C1->CR1 &= ~I2C_CR1_ACK;
 	return data;
 }
-
-uint8_t MPU6050_ReadBit(uint8_t address, uint8_t mem) {
-	uint8_t data;
-	//CHECK THAT LINE IS NOT BUSY
-	while(I2C1->SR2 & I2C_SR2_BUSY){}
-
-	I2C1->CR1 |= I2C_CR1_START;
-	while (!(I2C1->SR1 & I2C_SR1_SB)){};
-	(void) I2C1->SR1;
-
-	I2C1->DR = address;
-	while (!(I2C1->SR1 & I2C_SR1_ADDR)){};
-	(void) I2C1->SR1;
-	(void) I2C1->SR2;
-
-	I2C1->DR = mem;
-	while (!(I2C1->SR1 & I2C_SR1_BTF)){};
-
-	I2C1->CR1 |= I2C_CR1_START;
-	while (!(I2C1->SR1 & I2C_SR1_SB)){};
-	(void) I2C1->SR1;
-
-	I2C1->DR = address;
-	while(!(I2C1->SR1 & I2C_SR1_ADDR)) {
-		if(I2C1->SR1 & I2C_SR1_AF) {
-			I2C1->CR1 |= I2C_CR1_STOP;       //Stop generation
-	        return -1;
-	    }
-	}
-	(void)I2C1->SR2;
-	while(!(I2C1->SR1 & I2C_SR1_RXNE));   //Wait, data register is not empty
-	data = I2C1->DR;
-	I2C1->CR1 |= I2C_CR1_STOP;
-	I2C1->CR1 &=~ I2C_CR1_ACK;                 //Disable acknowledge
-
-/*
-	while (!(I2C1->SR1 & I2C_SR1_ADDR)){};
-	(void) I2C1->SR1;
-	(void) I2C1->SR2;
-	while (!(I2C1->SR1 & I2C_SR1_RXNE)){};
-
-	data = I2C1->DR;
-
-	I2C1->CR1 |= I2C_CR1_STOP;
-*/
-	return data;
-}
-
 
 int main(void) {
+    I2C1_init();
+
 	while(1) {
 
 	}
